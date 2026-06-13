@@ -1,0 +1,40 @@
+tar-fence/
+├── public/
+│   ├── index.html
+│   └── favicon.ico
+├── src/
+│   ├── assets/
+│   │   ├── images/
+│   │   │   └── logo.png
+│   │   └── styles/
+│   │       └── globals.css
+│   ├── components/
+│   │   ├── common/
+│   │   │   ├── Navbar.jsx
+│   │   │   ├── Footer.jsx
+│   │   │   ├── Button.jsx
+│   │   │   ├── FloatingShadows.jsx
+│   │   │   └── AnimatedCard.jsx
+│   │   ├── home/
+│   │   │   ├── HeroSection.jsx
+│   │   │   ├── QuotesSection.jsx
+│   │   │   ├── FeaturesSection.jsx
+│   │   │   └── HoeToUse.jsx
+│   │   └── auth/
+│   │       ├── RegisterForm.jsx
+│   │       ├── LoginForm.jsx
+│   │       └── CongratulationsModal.jsx
+│   ├── pages/
+│   │   ├── HomePage.jsx
+│   │   ├── RegisterPage.jsx
+│   │   ├── LoginPage.jsx
+│   │   └── DashboardPage.jsx
+│   ├── data/
+│   │   ├── quotes.js
+│   │   ├── features.js
+│   │   └── howToUse.js
+│   ├── App.jsx
+│   ├── App.css
+│   └── index.js
+├── package.json
+└── README.md
