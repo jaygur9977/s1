@@ -1,106 +1,103 @@
-// // google-login-simple.js (Simple but working)
-// const { chromium } = require('playwright');
-// const fs = require('fs');
-// const path = require('path');
-
-// (async () => {
-//   const userDataDir = 'C:\\Users\\hp\\AppData\\Local\\Google\\Chrome\\User Data';
-//   const profileDirectory = 'Profile 5';
-  
-//   console.log('🚀 Opening Chrome with your profile...');
-  
-//   // Launch with your real Chrome profile
-//   const context = await chromium.launchPersistentContext(
-//     path.join(userDataDir, profileDirectory),
-//     {
-//       headless: false,
-//       channel: 'chrome',
-//       executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-//       args: [
-//         '--disable-blink-features=AutomationControlled',
-//         '--start-maximized'
-//       ],
-//       viewport: null,
-//     }
-//   );
-  
-//   const page = await context.newPage();
-  
-//   // Google open karein
-//   await page.goto('https://www.google.com');
-  
-//   console.log('✅ Google opened in your Chrome profile');
-//   console.log('💡 Agar aap already logged in ho to direct access mil jayega');
-//   console.log('💡 Agar nahi ho to manually login kar lo');
-//   console.log('📌 Browser will stay open. Press Ctrl+C to close');
-  
-//   // Wait for manual Ctrl+C
-//   await new Promise(() => {});
-  
-// })();
 
 
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+require('dotenv').config();
 
+const authRoutes = require('./routes/auth');
 
+const app = express();
 
+// ==================== MIDDLEWARE ====================
+app.use(helmet());
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5174', 'http://127.0.0.1:5174'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(morgan('dev'));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-
-
-
-
-
-
-
-const { chromium } = require('playwright');
-const path = require('path');
-const fs = require('fs');
-
-(async () => {
-  const profilePath = path.join(
-    __dirname,
-    'profiles',
-    'user_1'
-  );
-
-  if (!fs.existsSync(profilePath)) {
-    fs.mkdirSync(profilePath, { recursive: true });
+// ==================== DATABASE CONNECTION ====================
+const connectDB = async () => {
+  try {
+    const conn = await mongoose.connect(process.env.MONGODB_URI);
+    
+    console.log('═══════════════════════════════════════');
+    console.log('✅ MongoDB Connected Successfully');
+    console.log(`📦 Host: ${conn.connection.host}`);
+    console.log(`🗄️  Database: ${conn.connection.name}`);
+    console.log('═══════════════════════════════════════');
+  } catch (error) {
+    console.error('❌ MongoDB Connection Failed:', error.message);
+    console.log('💡 Make sure your MongoDB Atlas connection string is correct');
+    console.log('💡 Check if your IP is whitelisted in MongoDB Atlas');
+    process.exit(1);
   }
+};
 
-  const context = await chromium.launchPersistentContext(
-    profilePath,
-    {
-      headless: false,
-      channel: 'chrome',
-      executablePath:
-        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-      viewport: null,
-      args: [
-        '--start-maximized',
-        '--disable-blink-features=AutomationControlled'
-      ]
-    }
-  );
+// Connect to database
+connectDB();
 
-  const page = context.pages()[0] || await context.newPage();
+// ==================== ROUTES ====================
+app.use('/api/auth', authRoutes);
 
-  // await page.goto('https://google.com');
-
-
-  await page.goto('https://google.com', {
-  waitUntil: 'domcontentloaded',
-  timeout: 60000
+// Health check route
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'Tar-Fence Server is running',
+    timestamp: new Date().toISOString(),
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+  });
 });
 
+// Home route
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Tar-Fence API',
+    version: '1.0.0',
+    description: 'Backend API for Tar-Fence Secure Sandbox Application',
+    endpoints: {
+      register: 'POST /api/auth/register',
+      login: 'POST /api/auth/login',
+      profile: 'GET /api/auth/profile/:uniqueKey'
+    }
+  });
+});
 
-  console.log(
-    'Login manually once. Profile will be saved automatically.'
-  );
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found`
+  });
+});
 
-  console.log(process.argv);
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('❌ Server Error:', err.stack);
+  res.status(500).json({
+    success: false,
+    message: 'Internal Server Error',
+    error: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+  });
+});
 
-})();
+// ==================== START SERVER ====================
+const PORT = process.env.PORT || 5000;
 
+app.listen(PORT, () => {
+  console.log('═══════════════════════════════════════');
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 API URL: http://localhost:${PORT}/api`);
+  console.log('═══════════════════════════════════════');
+});
 
-
-
-
+module.exports = app;

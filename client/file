@@ -1,40 +1,22 @@
-tar-fence/
+tar-fance/
 ├── public/
-│   ├── index.html
-│   └── favicon.ico
+│   └── index.html
 ├── src/
-│   ├── assets/
-│   │   ├── images/
-│   │   │   └── logo.png
-│   │   └── styles/
-│   │       └── globals.css
 │   ├── components/
-│   │   ├── common/
-│   │   │   ├── Navbar.jsx
-│   │   │   ├── Footer.jsx
-│   │   │   ├── Button.jsx
-│   │   │   ├── FloatingShadows.jsx
-│   │   │   └── AnimatedCard.jsx
-│   │   ├── home/
-│   │   │   ├── HeroSection.jsx
-│   │   │   ├── QuotesSection.jsx
-│   │   │   ├── FeaturesSection.jsx
-│   │   │   └── HoeToUse.jsx
-│   │   └── auth/
-│   │       ├── RegisterForm.jsx
-│   │       ├── LoginForm.jsx
-│   │       └── CongratulationsModal.jsx
+│   │   ├── Navbar.jsx
+│   │   ├── Footer.jsx
+│   │   ├── AnimatedBackground.jsx
+│   │   ├── ParticleField.jsx
+│   │   └── DetailCard.jsx
 │   ├── pages/
-│   │   ├── HomePage.jsx
-│   │   ├── RegisterPage.jsx
-│   │   ├── LoginPage.jsx
-│   │   └── DashboardPage.jsx
-│   ├── data/
-│   │   ├── quotes.js
-│   │   ├── features.js
-│   │   └── howToUse.js
+│   │   ├── Register.jsx
+│   │   ├── Login.jsx
+│   │   ├── DeleteAccount.jsx
+│   │   └── Congratulations.jsx
+│   ├── services/
+│   │   └── api.js
 │   ├── App.jsx
-│   ├── App.css
-│   └── index.js
+│   ├── index.js
+│   └── index.css
 ├── package.json
-└── README.md
+└── tailwind.config.js

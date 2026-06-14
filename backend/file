@@ -1,0 +1,16 @@
+server/
+├── config/
+│   └── db.js
+├── models/
+│   └── User.js
+├── routes/
+│   └── auth.js
+├── middleware/
+│   └── auth.js
+├── controllers/
+│   └── authController.js
+├── utils/
+│   └── generateKey.js
+├── .env
+├── package.json
+└── server.js
