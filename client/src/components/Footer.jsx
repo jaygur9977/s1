@@ -1,31 +1,49 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 
 const Footer = () => {
+  const currentYear = new Date().getFullYear();
+
   return (
     <motion.footer
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ delay: 1 }}
-      className="glass-morphism mt-auto"
+      transition={{ delay: 0.5 }}
+      className="relative mt-auto border-t border-white/[0.05]"
     >
-      <div className="max-w-7xl mx-auto py-6 px-4">
-        <div className="flex justify-between items-center">
-          <motion.p 
-            whileHover={{ scale: 1.05 }}
-            className="text-gray-600 font-semibold"
-          >
-            © 2026 JAY. All rights reserved.
-          </motion.p>
-          <motion.div 
-            animate={{ 
-              background: ['#FFB6C1', '#E6E6FA', '#98FB98', '#FFB6C1'],
-            }}
-            transition={{ duration: 3, repeat: Infinity }}
-            className="px-4 py-2 rounded-full"
-          >
-            <span className="text-white font-bold">Premium ✨</span>
-          </motion.div>
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
+          
+          {/* Copyright */}
+          <div className="flex items-center space-x-2 text-sm">
+            <span className="text-white/30">©</span>
+            <span className="text-white/50 font-medium">{currentYear} JAY</span>
+            <span className="text-white/20">·</span>
+            <span className="text-white/30">All rights reserved</span>
+          </div>
+
+          {/* Links */}
+          <div className="flex items-center space-x-6">
+            {[
+              { to: "/login", label: "Login" },
+              { to: "/register", label: "Register" },
+              { to: "/delete", label: "Delete" }
+            ].map((link) => (
+              <Link
+                key={link.to}
+                to={link.to}
+                className="text-white/30 hover:text-white/60 text-sm transition-colors duration-300"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
+
+          {/* Premium Badge */}
+          <div className="premium-badge px-3 py-1.5 rounded-full text-xs font-medium">
+            Premium
+          </div>
         </div>
       </div>
     </motion.footer>

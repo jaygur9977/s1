@@ -4,13 +4,11 @@ server/
 ├── models/
 │   └── User.js
 ├── routes/
-│   └── auth.js
+│   └── userRoutes.js
 ├── middleware/
 │   └── auth.js
-├── controllers/
-│   └── authController.js
 ├── utils/
-│   └── generateKey.js
+│   └── encryption.js
 ├── .env
-├── package.json
-└── server.js
+├── server.js
+└── package.json

@@ -6,57 +6,79 @@ const AnimatedBackground = () => {
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
-    const particles = [];
-    const colors = ['#FFB6C1', '#FFDAB9', '#E6E6FA', '#98FB98', '#87CEEB'];
-
-    class Particle {
-      constructor() {
-        this.x = Math.random() * canvas.width;
-        this.y = Math.random() * canvas.height;
-        this.size = Math.random() * 5 + 2;
-        this.speedX = Math.random() * 3 - 1.5;
-        this.speedY = Math.random() * 3 - 1.5;
-        this.color = colors[Math.floor(Math.random() * colors.length)];
-      }
-
-      update() {
-        this.x += this.speedX;
-        this.y += this.speedY;
-
-        if (this.x > canvas.width || this.x < 0) this.speedX *= -1;
-        if (this.y > canvas.height || this.y < 0) this.speedY *= -1;
-      }
-
-      draw() {
-        ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 0.3;
-      }
-    }
-
-    for (let i = 0; i < 50; i++) {
-      particles.push(new Particle());
-    }
-
-    const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      particles.forEach(particle => {
-        particle.update();
-        particle.draw();
-      });
-      requestAnimationFrame(animate);
-    };
-
-    animate();
-
-    const handleResize = () => {
+    
+    const resizeCanvas = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+    };
+    
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    // Single elegant background design - Soft geometric pattern
+    const drawBackground = () => {
+      // Base dark background
+      ctx.fillStyle = '#0a0a0f';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Subtle grid pattern
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.02)';
+      ctx.lineWidth = 0.5;
+      const gridSize = 60;
+      
+      for (let x = 0; x < canvas.width; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+      
+      for (let y = 0; y < canvas.height; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+
+      // Large subtle circles for depth
+      const circles = [
+        { x: '20%', y: '30%', radius: 300, opacity: 0.015 },
+        { x: '80%', y: '70%', radius: 400, opacity: 0.01 },
+        { x: '50%', y: '50%', radius: 500, opacity: 0.008 },
+      ];
+
+      circles.forEach(circle => {
+        const x = (parseFloat(circle.x) / 100) * canvas.width;
+        const y = (parseFloat(circle.y) / 100) * canvas.height;
+        
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, circle.radius);
+        gradient.addColorStop(0, `rgba(255, 255, 255, ${circle.opacity * 2})`);
+        gradient.addColorStop(0.5, `rgba(255, 255, 255, ${circle.opacity})`);
+        gradient.addColorStop(1, 'transparent');
+        
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(x, y, circle.radius, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Subtle vignette
+      const vignetteGradient = ctx.createRadialGradient(
+        canvas.width / 2, canvas.height / 2, canvas.width * 0.5,
+        canvas.width / 2, canvas.height / 2, canvas.width * 0.8
+      );
+      vignetteGradient.addColorStop(0, 'transparent');
+      vignetteGradient.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
+      
+      ctx.fillStyle = vignetteGradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    };
+
+    drawBackground();
+
+    const handleResize = () => {
+      resizeCanvas();
+      drawBackground();
     };
 
     window.addEventListener('resize', handleResize);
@@ -67,7 +89,6 @@ const AnimatedBackground = () => {
     <canvas
       ref={canvasRef}
       className="fixed top-0 left-0 w-full h-full -z-10"
-      style={{ background: 'linear-gradient(135deg, #FFF5F5, #F0F8FF, #FFF0F5)' }}
     />
   );
 };
