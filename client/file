@@ -1,0 +1,22 @@
+tar-fance/
+├── public/
+│   └── index.html
+├── src/
+│   ├── components/
+│   │   ├── Navbar.jsx
+│   │   ├── Footer.jsx
+│   │   ├── AnimatedBackground.jsx
+│   │   ├── ParticleField.jsx
+│   │   └── DetailCard.jsx
+│   ├── pages/
+│   │   ├── Register.jsx
+│   │   ├── Login.jsx
+│   │   ├── DeleteAccount.jsx
+│   │   └── Congratulations.jsx
+│   ├── services/
+│   │   └── api.js
+│   ├── App.jsx
+│   ├── index.js
+│   └── index.css
+├── package.json
+└── tailwind.config.js

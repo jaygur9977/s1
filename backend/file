@@ -1,0 +1,14 @@
+server/
+├── config/
+│   └── db.js
+├── models/
+│   └── User.js
+├── routes/
+│   └── userRoutes.js
+├── middleware/
+│   └── auth.js
+├── utils/
+│   └── encryption.js
+├── .env
+├── server.js
+└── package.json
