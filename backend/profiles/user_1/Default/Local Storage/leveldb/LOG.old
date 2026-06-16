@@ -1,3 +1,6 @@
-2026/06/15-16:07:31.609 3378 Reusing MANIFEST C:\Users\hp\Desktop\projects\cloude\backend\profiles\user_1\Default\Local Storage\leveldb/MANIFEST-000001
-2026/06/15-16:07:31.626 3378 Recovering log #7
-2026/06/15-16:07:31.633 3378 Reusing old log C:\Users\hp\Desktop\projects\cloude\backend\profiles\user_1\Default\Local Storage\leveldb/000007.log 
+2026/06/16-19:46:50.841 4500 Reusing MANIFEST C:\Users\hp\Desktop\projects\cloude\backend\browser-profiles\user_1\Default\Local Storage\leveldb/MANIFEST-000001
+2026/06/16-19:46:50.883 4500 Recovering log #10
+2026/06/16-19:46:50.917 4500 Reusing old log C:\Users\hp\Desktop\projects\cloude\backend\browser-profiles\user_1\Default\Local Storage\leveldb/000010.log 
+2026/06/16-19:49:01.971 37dc Level-0 table #14: started
+2026/06/16-19:49:01.978 37dc Level-0 table #14: 19556 bytes OK
+2026/06/16-19:49:01.980 37dc Delete type=0 #10

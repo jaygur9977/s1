@@ -10,14 +10,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-<<<<<<< HEAD:frontend/package.json
-=======
-    "@reduxjs/toolkit": "^2.12.0",
-    "@tailwindcss/vite": "^4.3.0",
-    "axios": "^1.17.0",
-    "crypto-js": "^4.2.0",
-    "framer-motion": "^12.40.0",
->>>>>>> 1733736316645905bc31a5e1807756e703f56709:client/package.json
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
