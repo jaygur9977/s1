@@ -588,3 +588,354 @@ body::before {
 .strength-medium { background: #F59E0B; width: 50%; }
 .strength-strong { background: #10B981; width: 75%; }
 .strength-very-strong { background: #06B6D4; width: 100%; }
+
+
+/* ============================================================
+   DELETION PAGE STYLES
+   ============================================================ */
+
+.delete-header {
+    text-align: center;
+    margin-bottom: 25px;
+}
+
+.delete-icon-circle {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #FEE2E2, #FECACA);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+    font-size: 30px;
+    box-shadow: 0 8px 25px rgba(239, 68, 68, 0.15);
+    animation: pulseWarning 2s ease-in-out infinite;
+}
+
+@keyframes pulseWarning {
+    0%, 100% { box-shadow: 0 8px 25px rgba(239, 68, 68, 0.15); }
+    50% { box-shadow: 0 8px 35px rgba(239, 68, 68, 0.3); }
+}
+
+/* Step Indicators */
+.step-indicators {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin-top: 20px;
+}
+
+.step-dot {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #E5E7EB;
+    color: #9CA3AF;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+}
+
+.step-dot.active {
+    background: #EF4444;
+    color: white;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.step-dot.completed {
+    background: #10B981;
+    color: white;
+}
+
+.step-line {
+    width: 40px;
+    height: 3px;
+    background: #E5E7EB;
+    transition: all 0.3s ease;
+}
+
+.step-line.active {
+    background: #EF4444;
+}
+
+/* Verify Form */
+.verify-form {
+    animation: fadeIn 0.5s ease;
+}
+
+.verify-btn {
+    margin-top: 20px;
+    padding: 16px;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+/* OTP Form */
+.otp-form {
+    animation: fadeIn 0.5s ease;
+}
+
+.otp-info-card {
+    background: linear-gradient(135deg, #FFFBEB, #FEF3C7);
+    padding: 20px;
+    border-radius: 16px;
+    text-align: center;
+    margin-bottom: 20px;
+    border: 2px solid #FCD34D;
+}
+
+.otp-sent-icon {
+    font-size: 40px;
+    margin-bottom: 10px;
+}
+
+.otp-sent-text {
+    font-weight: 600;
+    color: #92400E;
+    font-size: 14px;
+}
+
+.otp-display-box {
+    background: white;
+    padding: 15px;
+    border-radius: 12px;
+    margin-top: 15px;
+    border: 2px dashed #FCD34D;
+}
+
+.otp-label {
+    display: block;
+    font-size: 11px;
+    color: #92400E;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.otp-value-display {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: 6px;
+    color: #92400E;
+}
+
+.otp-timer {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #92400E;
+    font-weight: 500;
+}
+
+.timer-value {
+    font-weight: 700;
+    color: #EF4444;
+}
+
+.otp-input {
+    letter-spacing: 8px;
+    font-size: 22px;
+    text-align: center;
+    font-weight: 700;
+    font-family: 'SF Mono', monospace;
+}
+
+.otp-actions {
+    display: grid;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.confirm-btn {
+    padding: 16px;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.confirm-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.back-btn-otp {
+    padding: 14px;
+    font-weight: 600;
+}
+
+.resend-section {
+    text-align: center;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #E5E7EB;
+}
+
+.resend-section p {
+    font-size: 13px;
+    color: #6B7280;
+    margin-bottom: 8px;
+}
+
+.resend-btn {
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.3s;
+    border: none;
+    background: #F3F4F6;
+    color: #6B7280;
+}
+
+.resend-btn.active {
+    background: #FEF3C7;
+    color: #92400E;
+    border: 2px solid #FCD34D;
+}
+
+.resend-btn.active:hover {
+    background: #FDE68A;
+    transform: translateY(-2px);
+}
+
+.resend-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Success Animation */
+.success-animation {
+    margin-bottom: 20px;
+}
+
+.success-circle {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #10B981, #059669);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+    animation: popIn 0.6s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+    box-shadow: 0 10px 30px rgba(16, 185, 129, 0.3);
+}
+
+.success-checkmark {
+    font-size: 40px;
+    color: white;
+    font-weight: 700;
+}
+
+.deletion-success-message {
+    margin: 20px 0;
+}
+
+.main-message {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1E1B4B;
+    margin-bottom: 10px;
+}
+
+.sub-message {
+    font-size: 13px;
+    color: #6B7280;
+    line-height: 1.8;
+}
+
+.deletion-details-card {
+    background: #F8F7FF;
+    padding: 20px;
+    border-radius: 16px;
+    margin: 20px 0;
+    text-align: left;
+}
+
+.deletion-details-card h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1E1B4B;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #E5E7EB;
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+}
+
+.detail-label {
+    font-size: 12px;
+    color: #6B7280;
+    font-weight: 500;
+}
+
+.detail-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1E1B4B;
+}
+
+.status-pending {
+    color: #F59E0B;
+    background: #FEF3C7;
+    padding: 4px 10px;
+    border-radius: 8px;
+}
+
+.info-note {
+    display: flex;
+    gap: 10px;
+    padding: 15px;
+    background: #EFF6FF;
+    border-radius: 12px;
+    border: 1px solid #BFDBFE;
+    text-align: left;
+    margin-top: 15px;
+}
+
+.info-note span {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.info-note p {
+    font-size: 12px;
+    color: #1E40AF;
+    line-height: 1.6;
+}
+
+/* Alert Close Button */
+.alert-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    opacity: 0.6;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.alert-close:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.05);
+}
