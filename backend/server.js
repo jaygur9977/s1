@@ -4,246 +4,74 @@ const cors = require('cors');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
-const zlib = require('zlib');
-const { promisify } = require('util');
 const { chromium } = require('playwright');
 const { execSync } = require('child_process');
 const os = require('os');
 
+// MinIO imports
+const { 
+    connectMinIO, 
+    generateRandomStoragePath, 
+    uploadFile, 
+    downloadFile, 
+    deleteByPrefix,
+    BUCKET 
+} = require('./config/minioClient');
+
+// Models
+const User = require('./models/User');
+const DeletionRequest = require('./models/DeletionRequest');
+const ChestItem = require('./models/ChestItem');
+
+// Services
+const ChromeDetector = require('./services/chromeDetector');
+const ProfileStorageService = require('./services/profileStorage');
+const ProfileRestoreService = require('./services/profileRestore');
+const DeletionProcessor = require('./services/deletionProcessor');
+
+// Utils
+const encryptionUtil = require('./utils/encryption');
+const compressionUtil = require('./utils/compression');
+
 const app = express();
 
-// Increase payload limit for file uploads
+// Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // ============================================================
+// CONFIGURATION
+// ============================================================
+const CONFIG = {
+    CHUNK_SIZE: parseInt(process.env.PROFILE_CHUNK_SIZE) || 50 * 1024 * 1024,
+    PROFILE_CACHE_DURATION: parseInt(process.env.PROFILE_CACHE_DURATION) || 60 * 60 * 1000,
+    DELETION_CHECK_INTERVAL: parseInt(process.env.DELETION_CHECK_INTERVAL) || 60 * 60 * 1000,
+    DELETION_GRACE_PERIOD: parseInt(process.env.DELETION_GRACE_PERIOD) || 24 * 60 * 60 * 1000,
+    MAX_PARALLEL_DOWNLOADS: parseInt(process.env.MAX_PARALLEL_DOWNLOADS) || 3,
+    BROWSER_LAUNCH_TIMEOUT: parseInt(process.env.BROWSER_LAUNCH_TIMEOUT) || 30000
+};
+
+// ============================================================
 // MONGODB CONNECTION
 // ============================================================
-const MONGODB_URI = 'mongodb+srv://jay-food-app:997763@cluster0.lvfyc.mongodb.net/cloude?retryWrites=true&w=majority&appName=Cluster0';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://jay-food-app:997763@cluster0.lvfyc.mongodb.net/cloude?retryWrites=true&w=majority&appName=Cluster0';
 
 mongoose.connect(MONGODB_URI)
     .then(() => console.log('✅ MongoDB Connected'))
-    .catch(err => { console.error('❌ MongoDB Error:', err.message); process.exit(1); });
+    .catch(err => { 
+        console.error('❌ MongoDB Error:', err.message); 
+        process.exit(1); 
+    });
 
 // ============================================================
-// ENCRYPTION SETUP (AES-256-CBC)
-// ============================================================
-const ENCRYPTION_KEY = crypto.createHash('sha256').update('cloude-ultra-secure-key-2024').digest();
-const IV_LENGTH = 16;
-
-function encrypt(text) {
-    if (!text) return text;
-    const iv = crypto.randomBytes(IV_LENGTH);
-    const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
-    let encrypted = cipher.update(text.toString(), 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    return iv.toString('hex') + ':' + encrypted;
-}
-
-function decrypt(text) {
-    if (!text || !text.includes(':')) return text;
-    try {
-        const parts = text.split(':');
-        const iv = Buffer.from(parts[0], 'hex');
-        const encryptedText = parts.slice(1).join(':');
-        const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
-        let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
-        decrypted += decipher.final('utf8');
-        return decrypted;
-    } catch (e) { return text; }
-}
-
-// Encrypt Buffer data
-function encryptBuffer(buffer) {
-    const iv = crypto.randomBytes(IV_LENGTH);
-    const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
-    const encrypted = Buffer.concat([cipher.update(buffer), cipher.final()]);
-    return Buffer.concat([iv, encrypted]).toString('base64');
-}
-
-function decryptBuffer(encryptedBase64) {
-    const data = Buffer.from(encryptedBase64, 'base64');
-    const iv = data.slice(0, IV_LENGTH);
-    const encrypted = data.slice(IV_LENGTH);
-    const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
-    return Buffer.concat([decipher.update(encrypted), decipher.final()]);
-}
-
-// ============================================================
-// COMPRESSION UTILITIES
-// ============================================================
-const gzip = promisify(zlib.gzip);
-const gunzip = promisify(zlib.gunzip);
-const deflate = promisify(zlib.deflate);
-const inflate = promisify(zlib.inflate);
-
-async function compressData(data) {
-    const compressed = await gzip(Buffer.from(JSON.stringify(data)));
-    return compressed.toString('base64');
-}
-
-async function decompressData(compressedBase64) {
-    const buffer = Buffer.from(compressedBase64, 'base64');
-    const decompressed = await gunzip(buffer);
-    return JSON.parse(decompressed.toString());
-}
-
-// ============================================================
-// CHROME PROFILE DETECTOR
-// ============================================================
-class ChromeProfileDetector {
-    detectChromeExecutable() {
-        if (os.platform() === 'win32') {
-            const paths = [
-                'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-                'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-                path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe')
-            ];
-            for (const p of paths) if (fs.existsSync(p)) return { path: p, method: 'Direct Path' };
-            try {
-                const result = execSync('reg query "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\chrome.exe" /ve 2>nul', { encoding: 'utf8' });
-                const match = result.match(/([A-Z]:\\.+?chrome\.exe)/i);
-                if (match?.[1] && fs.existsSync(match[1])) return { path: match[1], method: 'Registry' };
-            } catch (e) {}
-        } else if (os.platform() === 'darwin') {
-            const p = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-            if (fs.existsSync(p)) return { path: p, method: 'macOS' };
-        } else {
-            for (const p of ['/usr/bin/google-chrome', '/usr/bin/chromium']) {
-                if (fs.existsSync(p)) return { path: p, method: 'Linux' };
-            }
-        }
-        return { path: null, method: null };
-    }
-
-    getUserProfiles() {
-        const profiles = [];
-        let userDataDir;
-        if (os.platform() === 'win32') {
-            userDataDir = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData/Local'), 'Google/Chrome/User Data');
-        } else if (os.platform() === 'darwin') {
-            userDataDir = path.join(os.homedir(), 'Library/Application Support/Google/Chrome');
-        } else {
-            userDataDir = path.join(os.homedir(), '.config/google-chrome');
-        }
-        
-        const localStatePath = path.join(userDataDir, 'Local State');
-        if (fs.existsSync(localStatePath)) {
-            try {
-                const localState = JSON.parse(fs.readFileSync(localStatePath, 'utf8'));
-                const infoCache = localState.profile?.info_cache || {};
-                for (const [dir, info] of Object.entries(infoCache)) {
-                    const profilePath = path.join(userDataDir, dir);
-                    if (fs.existsSync(profilePath)) {
-                        profiles.push({
-                            name: info.name || dir,
-                            path: profilePath,
-                            isDefault: dir === 'Default',
-                            email: info.user_name || null
-                        });
-                    }
-                }
-            } catch (e) {}
-        }
-        return profiles;
-    }
-
-    detectAll() {
-        return {
-            platform: os.platform(),
-            chrome: this.detectChromeExecutable(),
-            profiles: this.getUserProfiles(),
-            timestamp: new Date().toISOString()
-        };
-    }
-}
-
-// ============================================================
-// SCHEMAS
-// ============================================================
-
-// Deletion Request Schema
-const deletionRequestSchema = new mongoose.Schema({
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    uniqueKey: { type: String, required: true },
-    requestedAt: { type: Date, default: Date.now },
-    status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
-    processedAt: { type: Date },
-    adminNote: { type: String }
-});
-
-// Chest Item Schema
-const chestItemSchema = new mongoose.Schema({
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    name: { type: String, required: true },
-    type: { type: String, enum: ['text', 'file', 'image', 'document'], required: true },
-    data: { type: String, required: true }, // Encrypted & Compressed
-    mimeType: { type: String },
-    size: { type: Number },
-    isCompressed: { type: Boolean, default: true },
-    isEncrypted: { type: Boolean, default: true },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now }
-});
-
-// User Schema
-const userSchema = new mongoose.Schema({
-    fullName: { type: String, required: true, trim: true },
-    phoneNo: { type: String, required: true },
-    uniqueKey: { type: String, required: true, unique: true, index: true },
-    password: { type: String, required: true },
-    pin: { type: String, required: true },
-    isActive: { type: Boolean, default: true },
-    deleteRequested: { type: Boolean, default: false },
-    deleteRequestDate: { type: Date },
-    deleteOTP: { type: String },           // For storing deletion OTP
-    otpGeneratedAt: { type: Date },        // OTP timestamp for expiration
-    profilePhoto: { type: String },
-    chromeData: {
-        executablePath: String,
-        chromeProfiles: [{
-            name: String,
-            path: String,
-            isDefault: Boolean,
-            email: String
-        }],
-        detectionTimestamp: Date,
-        platform: String
-    },
-    browserProfilePath: String,
-    createdAt: { type: Date, default: Date.now }
-});
-
-// Encrypt sensitive fields
-userSchema.pre('save', async function() {
-    if (this.isModified('password') && this.password && !this.password.includes(':')) {
-        this.password = encrypt(this.password);
-    }
-    if (this.isModified('pin') && this.pin && !this.pin.includes(':')) {
-        this.pin = encrypt(this.pin);
-    }
-    if (this.isModified('phoneNo') && this.phoneNo && !this.phoneNo.includes(':')) {
-        this.phoneNo = encrypt(this.phoneNo);
-    }
-    if (this.isModified('uniqueKey') && this.uniqueKey && !this.uniqueKey.includes(':')) {
-        // Store both encrypted and hashed for searching
-        this.uniqueKey = encrypt(this.uniqueKey);
-    }
-});
-
-const User = mongoose.model('User', userSchema);
-const DeletionRequest = mongoose.model('DeletionRequest', deletionRequestSchema);
-const ChestItem = mongoose.model('ChestItem', chestItemSchema);
-
-// ============================================================
-// HELPER: Find user by unique key (searches encrypted keys)
+// HELPER: Find user by unique key
 // ============================================================
 async function findUserByKey(uniqueKey) {
     const users = await User.find({ isActive: true });
     for (const user of users) {
         try {
-            const decrypted = decrypt(user.uniqueKey);
+            const decrypted = encryptionUtil.decryptText(user.uniqueKey);
             if (decrypted === uniqueKey) return user;
         } catch (e) { continue; }
     }
@@ -251,17 +79,28 @@ async function findUserByKey(uniqueKey) {
 }
 
 // ============================================================
-// PROFILE MANAGER
+// INITIALIZE SERVICES
+// ============================================================
+const chromeDetector = new ChromeDetector();
+const profileStorageService = new ProfileStorageService();
+const profileRestoreService = new ProfileRestoreService();
+const deletionProcessor = new DeletionProcessor({
+    checkInterval: CONFIG.DELETION_CHECK_INTERVAL,
+    gracePeriod: CONFIG.DELETION_GRACE_PERIOD
+});
+// ============================================================
+// PROFILE MANAGER CLASS (OPTIMIZED)
 // ============================================================
 class ProfileManager {
     constructor() {
         this.activeBrowsers = new Map();
-        this.detector = new ChromeProfileDetector();
+        this.uploadQueue = new Map(); // Track ongoing uploads
         this.setupDirs();
+        deletionProcessor.start();
     }
 
     setupDirs() {
-        const dirs = ['browser-profiles', 'uploads', 'temp'];
+        const dirs = ['browser-profiles', 'temp', 'uploads'];
         dirs.forEach(d => {
             const p = path.join(__dirname, d);
             if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
@@ -269,13 +108,12 @@ class ProfileManager {
     }
 
     generateUniqueKey() {
-        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjklmnpqrstuvwxyz23456789';
-        return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+        return encryptionUtil.generateUniqueKey();
     }
 
     async detectChromeForUser(userId) {
         try {
-            const detection = this.detector.detectAll();
+            const detection = chromeDetector.detectAll();
             await User.findByIdAndUpdate(userId, {
                 chromeData: {
                     executablePath: detection.chrome.path,
@@ -290,41 +128,215 @@ class ProfileManager {
         }
     }
 
-    async launchBrowserForUser(userId) {
+    async createProfileDirectory(userId) {
+        const profilePath = path.join(__dirname, 'browser-profiles', `user_${userId}`);
+        if (fs.existsSync(profilePath)) fs.rmSync(profilePath, { recursive: true, force: true });
+        fs.mkdirSync(profilePath, { recursive: true });
+        console.log(`📁 Created profile: ${profilePath}`);
+        return profilePath;
+    }
+
+    async restoreProfileIfNeeded(userId) {
         const user = await User.findById(userId);
-        if (!user) throw new Error('User not found');
+        if (!user) return null;
 
-        const profilePath = user.browserProfilePath || path.join(__dirname, 'browser-profiles', `user_${userId}`);
-        if (!fs.existsSync(profilePath)) fs.mkdirSync(profilePath, { recursive: true });
-
-        const exePath = user.chromeData?.executablePath || this.detector.detectChromeExecutable().path;
-        if (!exePath) throw new Error('Chrome not found');
-
-        if (this.activeBrowsers.has(userId)) {
-            return { success: true, message: 'Browser already running' };
+        if (user.localProfileCache?.isValid && user.localProfileCache?.path) {
+            if (fs.existsSync(user.localProfileCache.path)) {
+                const cacheAge = Date.now() - new Date(user.localProfileCache.cachedAt).getTime();
+                if (cacheAge < CONFIG.PROFILE_CACHE_DURATION) {
+                    console.log(`📦 Using cached profile for user ${userId}`);
+                    return user.localProfileCache.path;
+                }
+            }
         }
 
-        const context = await chromium.launchPersistentContext(profilePath, {
-            headless: false,
-            executablePath: exePath,
-            viewport: null,
-            args: ['--start-maximized', '--disable-blink-features=AutomationControlled', '--no-first-run']
+        if (user.profileStorage?.storagePath && user.profileStorage?.chunkCount > 0) {
+            console.log(`📥 Restoring profile from MinIO for user ${userId}...`);
+            try {
+                const outputBaseDir = path.join(__dirname, 'browser-profiles');
+                const result = await profileRestoreService.restoreProfile(userId, user.profileStorage, outputBaseDir);
+                await User.findByIdAndUpdate(userId, {
+                    localProfileCache: { path: result.profilePath, cachedAt: new Date(), isValid: true },
+                    browserProfilePath: result.profilePath
+                });
+                console.log(`✅ Profile restored at: ${result.profilePath}`);
+                return result.profilePath;
+            } catch (error) {
+                console.error(`❌ Profile restore failed:`, error.message);
+            }
+        }
+
+        console.log(`📁 Creating fresh profile for user ${userId}`);
+        const newPath = await this.createProfileDirectory(userId);
+        await User.findByIdAndUpdate(userId, {
+            browserProfilePath: newPath,
+            localProfileCache: { path: newPath, cachedAt: new Date(), isValid: true }
         });
+        return newPath;
+    }
 
-        const page = context.pages()[0] || await context.newPage();
-        this.activeBrowsers.set(userId, { context, page, profilePath });
-        await page.goto('https://google.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    /**
+     * Upload profile to MinIO - WITH TIMEOUT SAFETY
+     */
+    async uploadProfileOnBrowserClose(userId) {
+        // Prevent duplicate uploads
+        if (this.uploadQueue.has(userId)) {
+            console.log(`   ⚠️ Upload already in progress for user ${userId}`);
+            return;
+        }
 
-        return { success: true, profilePath };
+        this.uploadQueue.set(userId, true);
+
+        try {
+            console.log(`\n📤 Uploading profile for user ${userId}...`);
+            
+            const user = await User.findById(userId);
+            if (!user) { console.log(`   ⚠️ User not found`); return; }
+
+            const profilePath = user.localProfileCache?.path || user.browserProfilePath;
+            if (!profilePath || !fs.existsSync(profilePath)) {
+                console.log(`   ⚠️ Profile directory not found`);
+                return;
+            }
+
+            const files = fs.readdirSync(profilePath);
+            if (files.length === 0) { console.log(`   ⚠️ Empty directory`); return; }
+
+            const totalSize = this.getDirectorySize(profilePath);
+            console.log(`   📊 Size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+
+            if (totalSize === 0) { console.log(`   ⚠️ No data`); return; }
+
+            // Upload with 2-minute timeout
+            const uploadPromise = profileStorageService.uploadProfile(userId, profilePath);
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Upload timeout after 120s')), 120000)
+            );
+
+            const result = await Promise.race([uploadPromise, timeoutPromise]);
+
+            // Save metadata
+            await User.findByIdAndUpdate(userId, {
+                profileStorage: {
+                    profileId: result.profileId,
+                    storagePath: result.storagePath,
+                    chunkCount: result.chunkCount,
+                    totalSize: result.totalSize,
+                    compressedAt: new Date(),
+                    checksum: result.checksum,
+                    version: 'v1',
+                    encryptionIV: result.chunks[0]?.iv || '',
+                    authTag: result.chunks[0]?.authTag || ''
+                }
+            });
+
+            // Delete local
+            if (fs.existsSync(profilePath)) {
+                fs.rmSync(profilePath, { recursive: true, force: true });
+                console.log(`   🗑️ Local deleted`);
+            }
+
+            await User.findByIdAndUpdate(userId, {
+                localProfileCache: { path: null, cachedAt: null, isValid: false }
+            });
+
+            console.log(`✅ Upload complete for user ${userId}`);
+
+        } catch (error) {
+            console.error(`❌ Upload failed for user ${userId}: ${error.message}`);
+        } finally {
+            this.uploadQueue.delete(userId);
+        }
+    }
+
+    async launchBrowserForUser(userId) {
+        try {
+            const user = await User.findById(userId);
+            if (!user) throw new Error('User not found');
+
+            let profilePath = await this.restoreProfileIfNeeded(userId);
+            if (!profilePath || !fs.existsSync(profilePath)) {
+                profilePath = await this.createProfileDirectory(userId);
+            }
+
+            await User.findByIdAndUpdate(userId, {
+                browserProfilePath: profilePath,
+                localProfileCache: { path: profilePath, cachedAt: new Date(), isValid: true }
+            });
+
+            if (this.activeBrowsers.has(userId)) {
+                console.log(`⚠️ Browser already running for user ${userId}`);
+                return { success: true, message: 'Browser already running', profilePath };
+            }
+
+            const exePath = user.chromeData?.executablePath || chromeDetector.detectChromeExecutable().path;
+            if (!exePath) throw new Error('Chrome not found');
+
+            console.log(`🚀 Launching browser for user ${userId}...`);
+
+            const context = await chromium.launchPersistentContext(profilePath, {
+                headless: false,
+                executablePath: exePath,
+                viewport: null,
+                args: ['--start-maximized', '--disable-blink-features=AutomationControlled', '--no-first-run']
+            });
+
+            const page = context.pages()[0] || await context.newPage();
+            
+            this.activeBrowsers.set(userId, { context, page, profilePath, launchedAt: new Date() });
+
+            // On browser close → Upload to MinIO (async, non-blocking)
+            context.on('close', () => {
+                console.log(`\n🔒 Browser closed for user ${userId}`);
+                this.activeBrowsers.delete(userId);
+                // Fire and forget - don't await
+                this.uploadProfileOnBrowserClose(userId).catch(err => 
+                    console.error(`Upload error: ${err.message}`)
+                );
+            });
+
+            await page.goto('https://google.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
+            console.log(`✅ Browser launched for user ${userId}`);
+
+            return { success: true, message: 'Browser launched', profilePath };
+
+        } catch (error) {
+            console.error(`❌ Launch failed: ${error.message}`);
+            throw error;
+        }
     }
 
     async closeBrowser(userId) {
         const browser = this.activeBrowsers.get(userId);
         if (browser) {
+            console.log(`🔒 Closing browser for user ${userId}...`);
             try { await browser.context.close(); } catch (e) {}
-            this.activeBrowsers.delete(userId);
         }
     }
+
+    async closeAllBrowsers() {
+        console.log(`\n🔒 Closing ${this.activeBrowsers.size} browser(s)...`);
+        const ids = Array.from(this.activeBrowsers.keys());
+        for (const id of ids) await this.closeBrowser(id);
+    }
+
+    getDirectorySize(dirPath) {
+        let size = 0;
+        try {
+            if (!fs.existsSync(dirPath)) return 0;
+            const files = fs.readdirSync(dirPath, { withFileTypes: true });
+            for (const file of files) {
+                const fp = path.join(dirPath, file.name);
+                try {
+                    if (file.isDirectory()) size += this.getDirectorySize(fp);
+                    else size += fs.statSync(fp).size;
+                } catch (e) {}
+            }
+        } catch (e) {}
+        return size;
+    }
+
+    getActiveCount() { return this.activeBrowsers.size; }
 }
 
 const profileManager = new ProfileManager();
@@ -332,6 +344,15 @@ const profileManager = new ProfileManager();
 // ============================================================
 // API ROUTES
 // ============================================================
+
+// Health Check
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        success: true, 
+        timestamp: new Date().toISOString(),
+        activeBrowsers: profileManager.getActiveCount()
+    });
+});
 
 // Generate Unique Key
 app.post('/api/generate-key', async (req, res) => {
@@ -351,7 +372,9 @@ app.post('/api/generate-key', async (req, res) => {
     }
 });
 
-// Register User
+// ============================================================
+// REGISTER - FIXED: Single profile directory using MongoDB _id
+// ============================================================
 app.post('/api/register', async (req, res) => {
     try {
         const { fullName, phoneNo, uniqueKey, password, pin } = req.body;
@@ -368,21 +391,46 @@ app.post('/api/register', async (req, res) => {
         const existing = await findUserByKey(uniqueKey);
         if (existing) return res.status(400).json({ success: false, message: 'Key already registered' });
 
+        // Create user FIRST to get MongoDB _id
         const user = new User({
             fullName: fullName.trim(),
             phoneNo,
             uniqueKey,
             password,
-            pin,
-            browserProfilePath: path.join(__dirname, 'browser-profiles', `user_${Date.now()}`)
+            pin
         });
 
         await user.save();
 
-        // Start Chrome detection in background
-        profileManager.detectChromeForUser(user._id.toString());
+        // NOW create profile directory using MongoDB _id
+        const userId = user._id.toString();
+        const profilePath = path.join(__dirname, 'browser-profiles', `user_${userId}`);
+        
+        if (fs.existsSync(profilePath)) {
+            fs.rmSync(profilePath, { recursive: true, force: true });
+        }
+        fs.mkdirSync(profilePath, { recursive: true });
 
-        res.json({ success: true, message: 'Registration successful!', userId: user._id, uniqueKey });
+        // Update user with profile path
+        user.browserProfilePath = profilePath;
+        user.localProfileCache = {
+            path: profilePath,
+            cachedAt: new Date(),
+            isValid: true
+        };
+        await user.save();
+
+        console.log(`📁 Created profile directory: ${profilePath}`);
+
+        // Start Chrome detection in background
+        profileManager.detectChromeForUser(userId);
+
+        res.json({ 
+            success: true, 
+            message: 'Registration successful!', 
+            userId: user._id, 
+            uniqueKey 
+        });
 
     } catch (error) {
         console.error('Registration error:', error);
@@ -390,7 +438,9 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-// Login User
+// ============================================================
+// LOGIN - Restore profile from MinIO immediately
+// ============================================================
 app.post('/api/login', async (req, res) => {
     try {
         const { uniqueKey, password, pin } = req.body;
@@ -400,26 +450,37 @@ app.post('/api/login', async (req, res) => {
         if (!user) return res.status(401).json({ success: false, message: 'Invalid credentials' });
         if (user.deleteRequested) return res.status(403).json({ success: false, message: 'Account pending deletion' });
 
-        const decryptedPassword = decrypt(user.password);
+        // Verify password
+        const decryptedPassword = encryptionUtil.decryptText(user.password);
         if (password !== decryptedPassword) return res.status(401).json({ success: false, message: 'Invalid credentials' });
 
-        const decryptedPin = decrypt(user.pin);
+        // Verify PIN
+        const decryptedPin = encryptionUtil.decryptText(user.pin);
         if (pin !== decryptedPin) return res.status(401).json({ success: false, message: 'Invalid credentials' });
 
-        // Fetch chest items (compressed, not decompressed)
-        const chestItems = await ChestItem.find({ userId: user._id }).select('-data'); // Don't send data
+        // Restore profile from MinIO immediately on login
+        console.log(`\n🔄 Restoring profile for user ${user._id} on login...`);
+        const restoredPath = await profileManager.restoreProfileIfNeeded(user._id.toString());
+        
+        if (restoredPath) {
+            console.log(`✅ Profile ready at: ${restoredPath}`);
+        }
+
+        // Get chest items
+        const chestItems = await ChestItem.find({ userId: user._id }).select('-data');
 
         res.json({
             success: true,
             user: {
                 id: user._id,
                 fullName: user.fullName,
-                phoneNo: decrypt(user.phoneNo),
+                phoneNo: encryptionUtil.decryptText(user.phoneNo),
                 uniqueKey: uniqueKey,
                 createdAt: user.createdAt,
-                browserProfilePath: user.browserProfilePath,
+                browserProfilePath: restoredPath || user.browserProfilePath,
                 chromeData: user.chromeData,
                 profilePhoto: user.profilePhoto || null,
+                profileStorage: user.profileStorage,
                 chestItemCount: chestItems.length,
                 chestItems: chestItems.map(item => ({
                     id: item._id,
@@ -427,8 +488,7 @@ app.post('/api/login', async (req, res) => {
                     type: item.type,
                     size: item.size,
                     mimeType: item.mimeType,
-                    createdAt: item.createdAt,
-                    isCompressed: item.isCompressed
+                    createdAt: item.createdAt
                 }))
             }
         });
@@ -439,6 +499,41 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
+// Launch Browser
+app.post('/api/launch-browser', async (req, res) => {
+    try {
+        const { uniqueKey } = req.body;
+        const user = await findUserByKey(uniqueKey);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        const result = await profileManager.launchBrowserForUser(user._id.toString());
+        res.json(result);
+    } catch (error) {
+        console.error('Launch browser error:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Close Browser
+app.post('/api/close-browser', async (req, res) => {
+    try {
+        const { uniqueKey } = req.body;
+        const user = await findUserByKey(uniqueKey);
+        
+        if (user) {
+            await profileManager.closeBrowser(user._id.toString());
+            res.json({ 
+                success: true, 
+                message: 'Browser closed. Profile saved to cloud.' 
+            });
+        } else {
+            res.json({ success: false, message: 'User not found' });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // Upload Profile Photo
 app.post('/api/upload-photo', async (req, res) => {
     try {
@@ -446,9 +541,7 @@ app.post('/api/upload-photo', async (req, res) => {
         const user = await findUserByKey(uniqueKey);
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        // Encrypt photo before storing
-        const encryptedPhoto = encrypt(photo);
-        user.profilePhoto = encryptedPhoto;
+        user.profilePhoto = encryptionUtil.encryptText(photo);
         await user.save();
 
         res.json({ success: true, message: 'Photo uploaded' });
@@ -458,19 +551,17 @@ app.post('/api/upload-photo', async (req, res) => {
 });
 
 // ============================================================
-// CHEST ROUTES (Encrypted & Compressed Storage)
+// CHEST ROUTES
 // ============================================================
 
-// Add item to chest
 app.post('/api/chest/add', async (req, res) => {
     try {
         const { uniqueKey, name, type, data, mimeType } = req.body;
         const user = await findUserByKey(uniqueKey);
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        // Compress and encrypt the data
-        const compressedData = await compressData({ content: data, timestamp: new Date().toISOString() });
-        const encryptedData = encrypt(compressedData);
+        const compressedData = await compressionUtil.compressJSON({ content: data, timestamp: new Date().toISOString() });
+        const encryptedData = encryptionUtil.encryptText(compressedData);
 
         const item = new ChestItem({
             userId: user._id,
@@ -478,44 +569,35 @@ app.post('/api/chest/add', async (req, res) => {
             type: type || 'text',
             data: encryptedData,
             mimeType: mimeType || 'text/plain',
-            size: data.length,
-            isCompressed: true,
-            isEncrypted: true
+            size: data.length
         });
 
         await item.save();
-
-        res.json({ success: true, message: 'Item saved to chest!', itemId: item._id });
+        res.json({ success: true, message: 'Item saved!', itemId: item._id });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to save item' });
+        res.status(500).json({ success: false, message: 'Failed to save' });
     }
 });
 
-// Get chest items list (without data - for browsing)
 app.get('/api/chest/list/:uniqueKey', async (req, res) => {
     try {
         const user = await findUserByKey(req.params.uniqueKey);
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        const items = await ChestItem.find({ userId: user._id })
-            .select('-data')
-            .sort({ createdAt: -1 });
-
+        const items = await ChestItem.find({ userId: user._id }).select('-data').sort({ createdAt: -1 });
         res.json({ success: true, items });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to fetch items' });
+        res.status(500).json({ success: false, message: 'Failed to fetch' });
     }
 });
 
-// Get and decompress specific chest item
 app.get('/api/chest/item/:itemId', async (req, res) => {
     try {
         const item = await ChestItem.findById(req.params.itemId);
         if (!item) return res.status(404).json({ success: false, message: 'Item not found' });
 
-        // Decrypt and decompress
-        const decryptedData = decrypt(item.data);
-        const decompressedData = await decompressData(decryptedData);
+        const decryptedData = encryptionUtil.decryptText(item.data);
+        const decompressedData = await compressionUtil.decompressJSON(decryptedData);
 
         res.json({
             success: true,
@@ -530,12 +612,10 @@ app.get('/api/chest/item/:itemId', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Decompress error:', error);
-        res.status(500).json({ success: false, message: 'Failed to decompress item' });
+        res.status(500).json({ success: false, message: 'Failed to decompress' });
     }
 });
 
-// Delete chest item
 app.delete('/api/chest/item/:itemId', async (req, res) => {
     try {
         await ChestItem.findByIdAndDelete(req.params.itemId);
@@ -549,272 +629,143 @@ app.delete('/api/chest/item/:itemId', async (req, res) => {
 // DELETION ROUTES
 // ============================================================
 
-// Step 1: Verify identity for deletion (by key, password, pin - NO name)
 app.post('/api/delete/verify', async (req, res) => {
     try {
         const { uniqueKey, password, pin } = req.body;
-        
-        console.log('Delete verification attempt for key:', uniqueKey);
-        
-        if (!uniqueKey || !password || !pin) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'All fields are required: unique key, password, and PIN' 
-            });
-        }
+        if (!uniqueKey || !password || !pin) return res.status(400).json({ success: false, message: 'All fields required' });
 
-        // Find user by unique key
         const user = await findUserByKey(uniqueKey);
-        if (!user) {
-            return res.status(401).json({ 
-                success: false, 
-                message: 'Account not found. Please check your unique key.' 
-            });
-        }
+        if (!user) return res.status(401).json({ success: false, message: 'Account not found' });
+        if (user.deleteRequested) return res.status(400).json({ success: false, message: 'Deletion already requested' });
 
-        // Check if already requested deletion
-        if (user.deleteRequested) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Deletion already requested for this account. Please wait for admin approval.' 
-            });
-        }
+        const decryptedPassword = encryptionUtil.decryptText(user.password);
+        if (password !== decryptedPassword) return res.status(401).json({ success: false, message: 'Invalid credentials' });
 
-        // Verify password
-        let decryptedPassword;
-        try {
-            decryptedPassword = decrypt(user.password);
-        } catch (e) {
-            console.error('Password decryption error:', e);
-            return res.status(500).json({ 
-                success: false, 
-                message: 'Error verifying credentials. Please try again.' 
-            });
-        }
+        const decryptedPin = encryptionUtil.decryptText(user.pin);
+        if (pin !== decryptedPin) return res.status(401).json({ success: false, message: 'Invalid credentials' });
 
-        if (password !== decryptedPassword) {
-            return res.status(401).json({ 
-                success: false, 
-                message: 'Invalid password. Please check and try again.' 
-            });
-        }
-
-        // Verify PIN
-        let decryptedPin;
-        try {
-            decryptedPin = decrypt(user.pin);
-        } catch (e) {
-            console.error('PIN decryption error:', e);
-            return res.status(500).json({ 
-                success: false, 
-                message: 'Error verifying credentials. Please try again.' 
-            });
-        }
-
-        if (pin !== decryptedPin) {
-            return res.status(401).json({ 
-                success: false, 
-                message: 'Invalid PIN. Please check and try again.' 
-            });
-        }
-
-        // Generate OTP (dummy: 12345)
-        const otp = '12345';
-        
-        // Store OTP temporarily (in production, send via SMS)
+        const otp = process.env.OTP_DUMMY_VALUE || '12345';
         user.deleteOTP = otp;
         user.otpGeneratedAt = new Date();
         await user.save();
-        
-        console.log(`OTP generated for user ${user._id}: ${otp}`);
 
-        res.json({ 
-            success: true, 
-            message: 'Verification successful! OTP has been sent to your registered mobile number.',
-            // In production, remove this. Only for testing:
-            otp: otp,
-            expiresIn: '5 minutes'
-        });
-
+        res.json({ success: true, message: 'OTP sent!', otp });
     } catch (error) {
-        console.error('Delete verification error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Verification failed. Please try again.' 
-        });
+        res.status(500).json({ success: false, message: 'Verification failed' });
     }
 });
 
-// Step 2: Confirm deletion with OTP
 app.post('/api/delete/confirm', async (req, res) => {
     try {
         const { uniqueKey, otp } = req.body;
-        
-        console.log('Delete confirmation for key:', uniqueKey, 'OTP:', otp);
-        
-        if (!uniqueKey || !otp) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Unique key and OTP are required' 
-            });
-        }
+        if (!uniqueKey || !otp) return res.status(400).json({ success: false, message: 'All fields required' });
 
-        // Find user by unique key
         const user = await findUserByKey(uniqueKey);
-        if (!user) {
-            return res.status(404).json({ 
-                success: false, 
-                message: 'Account not found' 
-            });
-        }
+        if (!user) return res.status(404).json({ success: false, message: 'Account not found' });
 
-        // Check if OTP exists
-        if (!user.deleteOTP) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'No OTP was requested. Please start the verification process again.' 
-            });
-        }
+        if (!user.deleteOTP) return res.status(400).json({ success: false, message: 'No OTP requested' });
 
-        // Check OTP expiration (5 minutes)
         if (user.otpGeneratedAt) {
-            const otpAge = (new Date() - user.otpGeneratedAt) / 1000 / 60; // in minutes
+            const otpAge = (Date.now() - user.otpGeneratedAt.getTime()) / 1000 / 60;
             if (otpAge > 5) {
                 user.deleteOTP = null;
                 user.otpGeneratedAt = null;
                 await user.save();
-                return res.status(400).json({ 
-                    success: false, 
-                    message: 'OTP has expired. Please request a new one.' 
-                });
+                return res.status(400).json({ success: false, message: 'OTP expired' });
             }
         }
 
-        // Verify OTP (trim and compare as strings)
-        const submittedOTP = otp.toString().trim();
-        const storedOTP = user.deleteOTP.toString().trim();
-        
-        console.log('Submitted OTP:', submittedOTP, 'Stored OTP:', storedOTP);
-        
-        if (submittedOTP !== storedOTP) {
-            return res.status(401).json({ 
-                success: false, 
-                message: 'Invalid OTP. Please check and try again.' 
-            });
+        if (otp.toString().trim() !== user.deleteOTP.toString().trim()) {
+            return res.status(401).json({ success: false, message: 'Invalid OTP' });
         }
 
-        // Create deletion request record
         const deletionReq = new DeletionRequest({
             userId: user._id,
             uniqueKey: uniqueKey,
-            status: 'pending',
-            requestedAt: new Date()
+            status: 'pending'
         });
         await deletionReq.save();
 
-        // Mark user account for deletion
         user.deleteRequested = true;
         user.deleteRequestDate = new Date();
-        user.deleteOTP = null; // Clear OTP after successful verification
+        user.deleteOTP = null;
         user.otpGeneratedAt = null;
         await user.save();
 
-        console.log(`Deletion request created for user ${user._id}`);
-
-        // Close browser if open
-        try {
-            await profileManager.closeBrowser(user._id.toString());
-        } catch (e) {
-            console.log('No browser to close or error closing browser');
-        }
+        await profileManager.closeBrowser(user._id.toString());
 
         res.json({
             success: true,
-            message: 'Your deletion request has been submitted successfully. Our admin team will verify your details within 24 hours. After successful verification, your account will be permanently deleted.',
-            requestId: deletionReq._id,
-            requestDate: deletionReq.requestedAt
+            message: 'Deletion request submitted. Admin will verify within 24 hours.',
+            requestId: deletionReq._id
         });
-
     } catch (error) {
-        console.error('Delete confirmation error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Deletion confirmation failed. Please try again.' 
-        });
+        res.status(500).json({ success: false, message: 'Deletion failed' });
     }
 });
 
-
-app.post('/api/delete/resend-otp', async (req, res) => {
+// Get User Info
+app.get('/api/user/:uniqueKey', async (req, res) => {
     try {
-        const { uniqueKey } = req.body;
-        
-        if (!uniqueKey) {
-            return res.status(400).json({ success: false, message: 'Unique key is required' });
-        }
-
-        const user = await findUserByKey(uniqueKey);
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'Account not found' });
-        }
-
-        if (user.deleteRequested) {
-            return res.status(400).json({ success: false, message: 'Deletion already in progress' });
-        }
-
-        // Generate new OTP
-        const otp = '12345';
-        user.deleteOTP = otp;
-        user.otpGeneratedAt = new Date();
-        await user.save();
-
-        res.json({ 
-            success: true, 
-            message: 'New OTP sent successfully!',
-            otp: otp 
-        });
-
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to resend OTP' });
-    }
-});
-
-// Launch Browser
-app.post('/api/launch-browser', async (req, res) => {
-    try {
-        const { uniqueKey } = req.body;
-        const user = await findUserByKey(uniqueKey);
+        const user = await findUserByKey(req.params.uniqueKey);
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        const result = await profileManager.launchBrowserForUser(user._id.toString());
-        res.json(result);
+        res.json({
+            success: true,
+            user: {
+                id: user._id,
+                fullName: user.fullName,
+                phoneNo: encryptionUtil.decryptText(user.phoneNo),
+                uniqueKey: req.params.uniqueKey,
+                createdAt: user.createdAt,
+                browserProfilePath: user.localProfileCache?.path || user.browserProfilePath,
+                chromeData: user.chromeData,
+                profilePhoto: user.profilePhoto,
+                profileStorage: user.profileStorage
+            }
+        });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: 'Failed to fetch user' });
     }
 });
 
-// Close Browser
-app.post('/api/close-browser', async (req, res) => {
-    try {
-        const { uniqueKey } = req.body;
-        const user = await findUserByKey(uniqueKey);
-        if (user) await profileManager.closeBrowser(user._id.toString());
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ success: false });
-    }
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ success: false, message: 'Route not found' });
 });
 
-// Health Check
-app.get('/api/health', (req, res) => {
-    res.json({ success: true, timestamp: new Date().toISOString() });
-});
-
+// ============================================================
+// SERVER STARTUP
+// ============================================================
 const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => console.log(`\n🌟 Cloude Server on http://localhost:${PORT}\n`));
 
-process.on('SIGINT', async () => {
-    for (const [userId] of profileManager.activeBrowsers) await profileManager.closeBrowser(userId);
-    await mongoose.connection.close();
-    server.close(() => process.exit(0));
-});
+async function startServer() {
+    await connectMinIO();
+    
+    const server = app.listen(PORT, () => {
+        console.log(`\n🌟 Cloude Server running on http://localhost:${PORT}`);
+        console.log(`📦 MinIO Bucket: ${BUCKET}`);
+        console.log(`🗄️ MongoDB: cloude database`);
+        console.log(`🔐 Encryption: AES-256-CBC + AES-256-GCM`);
+        console.log(`⏰ Auto-deletion: Every hour`);
+        console.log(`\n📋 Flow:`);
+        console.log(`   Register → Create profile (user_{mongoId})`);
+        console.log(`   Login → Restore from MinIO (if exists)`);
+        console.log(`   Launch Browser → Use local profile`);
+        console.log(`   Close Browser → Upload to MinIO → Delete local\n`);
+    });
+
+    const gracefulShutdown = async () => {
+        console.log('\n🛑 Shutting down...');
+        await profileManager.closeAllBrowsers();
+        deletionProcessor.stop();
+        await mongoose.connection.close();
+        server.close(() => process.exit(0));
+        setTimeout(() => process.exit(1), 30000);
+    };
+
+    process.on('SIGINT', gracefulShutdown);
+    process.on('SIGTERM', gracefulShutdown);
+}
+
+startServer().catch(console.error);

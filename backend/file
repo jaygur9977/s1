@@ -1,14 +1,17 @@
 server/
+├── server.js                    # Main server (updated)
 ├── config/
-│   └── db.js
+│   └── minioClient.js          # MinIO connection
+├── services/
+│   ├── profileStorage.js       
+│   ├── profileRestore.js       
+│   ├── deletionProcessor.js   
+│   └── chromeDetector.js       
 ├── models/
-│   └── User.js
-├── routes/
-│   └── userRoutes.js
-├── middleware/
-│   └── auth.js
-├── utils/
-│   └── encryption.js
-├── .env
-├── server.js
-└── package.json
+│   ├── User.js               
+│   ├── DeletionRequest.js    
+│   └── ChestItem.js
+└── utils/
+    ├── encryption.js         
+    ├── compression.js
+    └── checksum.js        
