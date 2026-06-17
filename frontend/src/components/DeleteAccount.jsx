@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './Auth.css';
+import config from '../config';
 
 const DeleteAccount = () => {
     const [step, setStep] = useState(1);
@@ -71,7 +72,7 @@ const DeleteAccount = () => {
         setSuccess('');
 
         try {
-            const res = await fetch('http://localhost:5000/api/delete/verify', {
+            const res = await fetch(`${config.API_URL}/api/delete/verify`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -113,7 +114,7 @@ const DeleteAccount = () => {
         setError('');
 
         try {
-            const res = await fetch('http://localhost:5000/api/delete/confirm', {
+            const res = await fetch(`${config.API_URL}/api/delete/confirm`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -148,7 +149,7 @@ const DeleteAccount = () => {
         setError('');
         
         try {
-            const res = await fetch('http://localhost:5000/api/delete/resend-otp', {
+            const res = await fetch(`${config.API_URL}/api/delete/resend-otp`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ uniqueKey: form.uniqueKey.trim() })

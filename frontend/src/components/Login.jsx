@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Chest from './Chest';
 import './Auth.css';
+import config from '../config';
 
 const Login = ({ onLogin }) => {
     const [form, setForm] = useState({ uniqueKey: '', password: '', pin: '' });
@@ -29,7 +30,7 @@ const Login = ({ onLogin }) => {
         }
 
         try {
-            const res = await fetch('http://localhost:5000/api/login', {
+            const res = await fetch(`${config.API_URL}/api/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(form)
@@ -55,7 +56,7 @@ const Login = ({ onLogin }) => {
         setBrowserLoading(true);
         setBrowserMessage('');
         try {
-            const res = await fetch('http://localhost:5000/api/launch-browser', {
+            const res = await fetch(`${config.API_URL}/api/launch-browser`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ uniqueKey: user.uniqueKey })
@@ -90,7 +91,7 @@ const Login = ({ onLogin }) => {
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
-                const res = await fetch('http://localhost:5000/api/upload-photo', {
+                const res = await fetch(`${config.API_URL}/api/upload-photo`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

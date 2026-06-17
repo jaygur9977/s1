@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import config from '../config';
 import './Auth.css';
 
 const Registration = ({ onRegister }) => {
@@ -26,12 +27,21 @@ const Registration = ({ onRegister }) => {
 
     const generateKey = async () => {
         setGenerating(true);
+        setError('');
         try {
-            const res = await fetch('http://localhost:5000/api/generate-key', { method: 'POST' });
+            const res = await fetch(`${config.API_URL}/api/generate-key`, { 
+                method: 'POST' 
+            });
             const data = await res.json();
-            if (data.success) setForm(prev => ({ ...prev, uniqueKey: data.uniqueKey }));
-            else setError(data.message);
-        } catch { setError('Server error'); }
+            if (data.success) {
+                setForm(prev => ({ ...prev, uniqueKey: data.uniqueKey }));
+            } else {
+                setError(data.message);
+            }
+        } catch (err) {
+            setError('Server error. Please check your connection.');
+            console.error('Generate key error:', err);
+        }
         setGenerating(false);
     };
 
@@ -40,7 +50,7 @@ const Registration = ({ onRegister }) => {
         setLoading(true);
         setError('');
         try {
-            const res = await fetch('http://localhost:5000/api/register', {
+            const res = await fetch(`${config.API_URL}/api/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(form)
@@ -49,8 +59,13 @@ const Registration = ({ onRegister }) => {
             if (data.success) {
                 setSuccess('🎉 Registration successful! Redirecting...');
                 setTimeout(() => onRegister?.(data), 1500);
-            } else setError(data.message);
-        } catch { setError('Connection failed'); }
+            } else {
+                setError(data.message);
+            }
+        } catch (err) {
+            setError('Connection failed. Is the server running?');
+            console.error('Register error:', err);
+        }
         setLoading(false);
     };
 

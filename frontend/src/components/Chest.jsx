@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './Chest.css';
+import config from '../config';
 
 const Chest = ({ uniqueKey }) => {
     const [items, setItems] = useState([]);
@@ -30,7 +31,7 @@ const Chest = ({ uniqueKey }) => {
 
     const fetchItems = async () => {
         try {
-            const res = await fetch(`http://localhost:5000/api/chest/list/${uniqueKey}`);
+            const res = await fetch(`http://172.29.76.166:5000/api/chest/list/${uniqueKey}`);
             const data = await res.json();
             if (data.success) setItems(data.items);
         } catch (e) { console.error(e); }
@@ -41,7 +42,7 @@ const Chest = ({ uniqueKey }) => {
         setLoading(true);
         setError('');
         try {
-            const res = await fetch('http://localhost:5000/api/chest/add', {
+            const res = await fetch(`${config.API_URL}/api/chest/add`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ uniqueKey, ...newItem })
@@ -69,7 +70,7 @@ const Chest = ({ uniqueKey }) => {
         setLoading(true);
         setDecompressedData(null);
         try {
-            const res = await fetch(`http://localhost:5000/api/chest/item/${itemId}`);
+            const res = await fetch(`http://172.29.76.166:5000/api/chest/item/${itemId}`);
             const data = await res.json();
             if (data.success) {
                 setDecompressedData(data.item);
@@ -84,7 +85,7 @@ const Chest = ({ uniqueKey }) => {
         if (!window.confirm('Delete this item permanently?')) return;
         
         try {
-            await fetch(`http://localhost:5000/api/chest/item/${itemId}`, { method: 'DELETE' });
+            await fetch(`http://172.29.76.166:5000/api/chest/item/${itemId}`, { method: 'DELETE' });
             if (selectedItem === itemId) {
                 setSelectedItem(null);
                 setDecompressedData(null);
@@ -143,7 +144,7 @@ const Chest = ({ uniqueKey }) => {
             try {
                 const fileData = await processFile(file);
                 
-                const res = await fetch('http://localhost:5000/api/chest/add', {
+                const res = await fetch(`${config.API_URL}/api/chest/add`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
